@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,7 +36,7 @@ func NewAuthHandler(providers map[string]config.ProviderConfig, redirectURI stri
 }
 
 func (h *AuthHandler) GetAuthURL(c fiber.Ctx) error {
-	providerName := c.Params("provider")
+	providerName := strings.Clone(c.Params("provider"))
 	provider, exists := h.Providers[providerName]
 	if !exists {
 		return c.Status(400).SendString("Unknown provider")
