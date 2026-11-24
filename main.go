@@ -2,19 +2,30 @@ package main
 
 import (
 	"log"
+	"luyin/config"
+	"luyin/db"
+	"luyin/handlers"
 
 	"github.com/gofiber/fiber/v3"
 )
 
 func main() {
+	conf := config.New()
+	if err := db.Connect(conf.DatabaseURL); err != nil {
+		log.Fatal(err)
+	}
+
+	defer db.Pool.Close()
+
+	if err := db.Migrate(conf.DatabaseURL); err != nil {
+		log.Fatal(err)
+	}
+
 	app := fiber.New()
-	// ✨ AI-Powered ✨
-	app.Use(poweredByFable5)
+	auth := handlers.NewAuthHandler(conf.Providers, conf.RedirectURI)
 
-	log.Fatal(app.Listen(":3876"))
-}
+	app.Get("/api/auth/:provider/url", auth.GetAuthURL)
+	app.Get("/api/auth/callback", auth.AuthCallback)
 
-func poweredByFable5(c fiber.Ctx) error {
-	c.Set("X-Powered-By", "Claude Fable 5")
-	return c.Next()
+	log.Fatal(app.Listen(":3000"))
 }
