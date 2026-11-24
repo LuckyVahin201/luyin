@@ -22,6 +22,11 @@ type AuthHandler struct {
 	Store       sync.Map
 }
 
+type AuthSession struct {
+	ProviderName string
+	Verifier     string
+}
+
 func NewAuthHandler(providers map[string]config.ProviderConfig, redirectURI string) *AuthHandler {
 	return &AuthHandler{
 		RedirectURI: redirectURI,
@@ -38,23 +43,22 @@ func (h *AuthHandler) GetAuthURL(c fiber.Ctx) error {
 
 	state, _ := utils.GenerateCodeVerifier()
 
-	var url string
+	sessionData := AuthSession{ProviderName: providerName}
+
+	url := fmt.Sprintf(
+		"%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
+		provider.AuthURL, provider.ClientID, h.RedirectURI, state,
+	)
+
 	if provider.UsePKCE {
 		verifier, _ := utils.GenerateCodeVerifier()
 		challenge := utils.GenerateCodeChallenge(verifier)
 
-		h.Store.Store(state, verifier)
-
-		url = fmt.Sprintf(
-			"%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s&code_challenge=%s&code_challenge_method=S256",
-			provider.AuthURL, provider.ClientID, h.RedirectURI, state, challenge,
-		)
-	} else {
-		url = fmt.Sprintf(
-			"%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
-			provider.AuthURL, provider.ClientID, h.RedirectURI, state,
-		)
+		sessionData.Verifier = verifier
+		url += fmt.Sprintf("&code_challenge=%s&code_challenge_method=S256", challenge)
 	}
+
+	h.Store.Store(state, sessionData)
 
 	return c.JSON(fiber.Map{"url": url})
 }
@@ -63,14 +67,17 @@ func (h *AuthHandler) AuthCallback(c fiber.Ctx) error {
 	code := c.Query("code")
 	state := c.Query("state")
 
-	providerName := "anilist"
-	if _, exists := h.Store.Load(state); exists {
-		providerName = "trakt"
+	sessionDataIfc, exists := h.Store.LoadAndDelete(state)
+	if !exists {
+		return c.Status(400).SendString("Invalid or expired state")
 	}
+
+	sessionData := sessionDataIfc.(AuthSession)
+	providerName := sessionData.ProviderName
 
 	provider, exists := h.Providers[providerName]
 	if !exists {
-		return c.Status(400).SendString("Invalid provider or state")
+		return c.Status(500).SendString("Provider config missing")
 	}
 
 	payload := map[string]string{
@@ -81,8 +88,7 @@ func (h *AuthHandler) AuthCallback(c fiber.Ctx) error {
 	}
 
 	if provider.UsePKCE {
-		verifierIfc, _ := h.Store.LoadAndDelete(state)
-		payload["code_verifier"] = verifierIfc.(string)
+		payload["code_verifier"] = sessionData.Verifier
 	} else {
 		payload["client_secret"] = provider.ClientSecret
 	}
