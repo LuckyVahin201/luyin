@@ -33,23 +33,32 @@ func New() Config {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 
 	return Config{
-		DatabaseURL: os.Getenv("DATABASE_URL"),
-		JWTSecret:   os.Getenv("JWT_SECRET"),
+		DatabaseURL: require("DATABASE_URL"),
+		JWTSecret:   require("JWT_SECRET"),
 		RedirectURI: "http://localhost:3000/api/auth/callback",
 		Providers: map[string]ProviderConfig{
 			"trakt": {
 				AuthURL:  "https://trakt.tv/oauth/authorize",
 				TokenURL: "https://api.trakt.tv/oauth/token",
-				ClientID: os.Getenv("TRAKT_CLIENT_ID"),
+				ClientID: require("TRAKT_CLIENT_ID"),
 				UsePKCE:  true,
 			},
 			"anilist": {
 				AuthURL:      "https://anilist.co/api/v2/oauth/authorize",
 				TokenURL:     "https://anilist.co/api/v2/oauth/token",
-				ClientID:     os.Getenv("ANILI_CLIENT_ID"),
-				ClientSecret: os.Getenv("ANILI_CLIENT_SE"),
+				ClientID:     require("ANILI_CLIENT_ID"),
+				ClientSecret: require("ANILI_CLIENT_SE"),
 				UsePKCE:      false,
 			},
 		},
 	}
+}
+
+func require(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		panic("missing required environment variable: " + key)
+	}
+
+	return v
 }
