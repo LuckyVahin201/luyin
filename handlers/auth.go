@@ -73,8 +73,19 @@ func (h *AuthHandler) GetAuthURL(c fiber.Ctx) error {
 }
 
 func (h *AuthHandler) AuthCallback(c fiber.Ctx) error {
-	code := c.Query("code")
 	state := c.Query("state")
+
+	if errCode := c.Query("error"); errCode != "" {
+		h.Store.Delete(state)
+		slog.Warn("oauth not granted", "error", errCode, "description", c.Query("error_description"))
+
+		return c.Status(fiber.StatusBadRequest).SendString("Authorization was not granted")
+	}
+
+	code := c.Query("code")
+	if code == "" || state == "" {
+		return c.Status(fiber.StatusBadRequest).SendString("Missing code or state")
+	}
 
 	sessionDataIfc, exists := h.Store.LoadAndDelete(state)
 	if !exists {
