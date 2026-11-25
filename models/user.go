@@ -5,12 +5,14 @@ import (
 	"time"
 
 	"luyin/db"
+	"luyin/utils"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/oklog/ulid/v2"
 )
 
 type User struct {
-	ID        string    `json:"id"`
+	ID        ulid.ULID    `json:"id"`
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -21,6 +23,18 @@ func (m *User) FromRow(row pgx.Row) error {
 		&m.Email,
 		&m.CreatedAt,
 	)
+}
+
+func CreateUser(ctx context.Context, email string, password_hash string) (*User, error) {
+	user := User{} 
+
+	err := user.FromRow(db.Pool.QueryRow(ctx, `
+		INSERT INTO users (id, email, password_hash)
+		
+		RETURNING *
+	`,utils.ToUUID(ulid.Make()), email, password_hash))
+
+	return &user, err
 }
 
 func GetUser(ctx context.Context, id string) (*User, error) {

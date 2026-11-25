@@ -7,11 +7,12 @@ import (
 	"luyin/db"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/oklog/ulid/v2"
 )
 
 type Connection struct {
-	ID           string     `json:"id"`
-	UserID       string     `json:"-"`
+	ID           ulid.ULID     `json:"id"`
+	UserID       ulid.ULID     `json:"-"`
 	Provider     string     `json:"provider"`
 	AccessToken  string     `json:"-"`
 	RefreshToken *string    `json:"-"`
