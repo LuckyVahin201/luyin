@@ -34,7 +34,9 @@ type keyParams struct {
 
 func generateSalt() []byte {
 	salt := make([]byte, 32)
-	rand.Read(salt) // according to the docs rand never fails: https://pkg.go.dev/crypto/rand#Read
+	// https://pkg.go.dev/crypto/rand#Read
+	rand.Read(salt)
+
 	return salt
 }
 

@@ -4,7 +4,7 @@ services:
     image: postgres-pgx-ulid
     build:
       context: .
-      dockerfile: database.dockerfile # ig we're updating to postgres 18! :>
+      dockerfile: database.dockerfile
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 2s
