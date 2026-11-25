@@ -1,6 +1,6 @@
 BEGIN;
 
 ALTER TABLE identities
-DROP COLUMN provider;
+ADD COLUMN provider text NOT NULL;
 
 COMMIT;

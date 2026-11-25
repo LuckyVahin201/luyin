@@ -1,4 +1,4 @@
-// package handlers
+package handlers
 
 // import "github.com/gofiber/fiber/v3"
 
@@ -11,4 +11,3 @@
 // func NewOIDCHandler() *OIDCHandler {
 // 	return &OIDCHandler{}
 // }
-
