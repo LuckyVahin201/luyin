@@ -126,8 +126,8 @@ func (h *AuthHandler) exchangeAndSave(c fiber.Ctx, tokenURL string, payload map[
 	_, err = user.UpsertConnection(ctx.Background(), &models.Connection{
 		Provider:     providerName,
 		AccessToken:  tokenData.AccessToken,
-		RefreshToken: tokenData.RefreshToken,
-		ExpiresAt:    expiresAt,
+		RefreshToken: &tokenData.RefreshToken,
+		ExpiresAt:    &expiresAt,
 	})
 
 	if err != nil {

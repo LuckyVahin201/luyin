@@ -82,6 +82,10 @@ func (s *TraktSyncer) Sync(ctx context.Context, conn models.Connection) ([]Norma
 
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, "", ErrUnauthorized
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, "", fmt.Errorf("trakt API status %d: %s", resp.StatusCode, string(body))

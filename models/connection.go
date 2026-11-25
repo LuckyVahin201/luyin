@@ -14,10 +14,11 @@ type Connection struct {
 	UserID       string     `json:"-"`
 	Provider     string     `json:"provider"`
 	AccessToken  string     `json:"-"`
-	RefreshToken string     `json:"-"`
-	ExpiresAt    int64      `json:"expires_at"`
+	RefreshToken *string    `json:"-"`
+	ExpiresAt    *int64     `json:"expires_at"`
 	LastSyncedAt *time.Time `json:"last_synced_at"`
 	LastCursor   *string    `json:"-"`
+	Invalidated  bool       `json:"invalidated"`
 }
 
 func (m *Connection) FromRow(row pgx.Row) error {
@@ -30,7 +31,15 @@ func (m *Connection) FromRow(row pgx.Row) error {
 		&m.ExpiresAt,
 		&m.LastSyncedAt,
 		&m.LastCursor,
+		&m.Invalidated,
 	)
+}
+
+func (c *Connection) NeedsRefresh(buffer time.Duration) bool {
+	if c.ExpiresAt == nil || *c.ExpiresAt == 0 {
+		return false
+	}
+	return time.Now().Add(buffer).Unix() >= *c.ExpiresAt
 }
 
 func (u *User) UpsertConnection(ctx context.Context, conn *Connection) (*Connection, error) {
@@ -50,6 +59,18 @@ func (u *User) UpsertConnection(ctx context.Context, conn *Connection) (*Connect
 	}
 
 	return &saved, nil
+}
+
+func (c *Connection) UpdateTokens(ctx context.Context, accessToken string, refreshToken *string, expiresAt *int64) error {
+	return c.FromRow(db.Pool.QueryRow(ctx, `
+		UPDATE connections
+		SET access_token = $1,
+		    refresh_token = COALESCE($2, refresh_token),
+		    expires_at = $3,
+		    invalidated = FALSE
+		WHERE id = $4
+		RETURNING *
+	`, accessToken, refreshToken, expiresAt, c.ID))
 }
 
 func (u *User) GetConnections(ctx context.Context) ([]Connection, error) {
@@ -83,6 +104,7 @@ func (u *User) HasStaleConnections(ctx context.Context, staleBefore time.Time) (
 		SELECT EXISTS (
 			SELECT 1 FROM connections
 			WHERE user_id = $1
+			  AND invalidated = FALSE
 			  AND (last_synced_at IS NULL OR last_synced_at < $2)
 		)
 	`, u.ID, staleBefore).Scan(&exists)
@@ -91,21 +113,30 @@ func (u *User) HasStaleConnections(ctx context.Context, staleBefore time.Time) (
 }
 
 func (c *Connection) MarkSynced(ctx context.Context, nextCursor string) error {
-	_, err := db.Pool.Exec(ctx, `
+	return c.FromRow(db.Pool.QueryRow(ctx, `
 		UPDATE connections
 		SET last_synced_at = NOW(),
 		    last_cursor = COALESCE(NULLIF($1, ''), last_cursor)
 		WHERE id = $2
-	`, nextCursor, c.ID)
+		RETURNING *
+	`, nextCursor, c.ID))
+}
 
-	return err
+func (c *Connection) MarkInvalidated(ctx context.Context) error {
+	return c.FromRow(db.Pool.QueryRow(ctx, `
+		UPDATE connections
+		SET invalidated = TRUE
+		WHERE id = $1
+		RETURNING *
+	`, c.ID))
 }
 
 func GetStaleConnectionUserIDs(ctx context.Context, staleBefore time.Time, limit int) ([]string, error) {
 	rows, err := db.Pool.Query(ctx, `
 		SELECT DISTINCT user_id
 		FROM connections
-		WHERE last_synced_at IS NULL OR last_synced_at < $1
+		WHERE invalidated = FALSE
+		  AND (last_synced_at IS NULL OR last_synced_at < $1)
 		LIMIT $2
 	`, staleBefore, limit)
 

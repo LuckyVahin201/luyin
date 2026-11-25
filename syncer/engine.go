@@ -118,9 +118,20 @@ func (e *Engine) syncUser(ctx context.Context, userID string) {
 	}
 
 	for _, conn := range conns {
+		if conn.Invalidated {
+			continue
+		}
+
 		providerSyncer, ok := e.providers[conn.Provider]
 		if !ok {
 			continue
+		}
+
+		if conn.NeedsRefresh(5 * time.Minute) {
+			if err := e.refreshConnection(ctx, &conn); err != nil {
+				log.Printf("token refresh failed [%s/%s]: %v", userID, conn.Provider, err)
+				continue
+			}
 		}
 
 		activities, nextCursor, err := providerSyncer.Sync(ctx, conn)

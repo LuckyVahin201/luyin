@@ -2,10 +2,14 @@ package syncer
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"luyin/models"
 )
+
+var ErrUnauthorized = errors.New("provider unauthorized or token revoked")
+var ErrRefreshRejected = errors.New("refresh token rejected by provider")
 
 type NormalizedActivity struct {
 	ProviderItemID string

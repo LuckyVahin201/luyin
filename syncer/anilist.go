@@ -49,6 +49,10 @@ func (s *AniListSyncer) postGraphQL(ctx context.Context, accessToken string, pay
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		return ErrUnauthorized
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("anilist API status %d: %s", resp.StatusCode, string(raw))
