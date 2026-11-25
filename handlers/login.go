@@ -6,7 +6,6 @@ import (
 	"luyin/utils"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -35,6 +34,8 @@ func (h LoginHandler) CreateUserWithPassword(c fiber.Ctx) error {
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user already exists"})
 		}
+
+		return c.SendStatus(fiber.StatusInternalServerError)
 	}
 
 	token, err := utils.GenerateJWT(user.ID, h.JWTSecret)
@@ -61,9 +62,8 @@ func (h LoginHandler) Login(c fiber.Ctx) error {
 
 	user, err := models.GetUserByEmail(c, req.Email)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
-		}
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+
 	}
 
 	if !utils.CompareHashes(*user.PasswordHash, req.Password) {
@@ -73,7 +73,6 @@ func (h LoginHandler) Login(c fiber.Ctx) error {
 	token, err := utils.GenerateJWT(user.ID, h.JWTSecret)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate token"})
-
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
