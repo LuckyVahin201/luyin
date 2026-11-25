@@ -59,6 +59,7 @@ func (h *AuthHandler) GetAuthURL(c fiber.Ctx) error {
 		url += fmt.Sprintf("&code_challenge=%s&code_challenge_method=S256", challenge)
 	}
 
+	// TODO: replace with redis
 	h.Store.Store(state, sessionData)
 
 	return c.JSON(fiber.Map{"url": url})
@@ -125,7 +126,7 @@ func (h *AuthHandler) exchangeAndSave(c fiber.Ctx, tokenURL string, payload map[
 	_, err = db.Pool.Exec(
 		ctx.Background(),
 		`
-		INSERT INTO linked_accounts (user_id, provider, access_token, refresh_token, expires_at)
+		INSERT INTO connections (user_id, provider, access_token, refresh_token, expires_at)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (user_id, provider) DO UPDATE SET 
 			access_token = EXCLUDED.access_token,
