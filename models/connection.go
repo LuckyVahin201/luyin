@@ -50,7 +50,8 @@ func (u *User) UpsertConnection(ctx context.Context, conn *Connection) (*Connect
 		ON CONFLICT (user_id, provider) DO UPDATE SET
 			access_token = EXCLUDED.access_token,
 			refresh_token = EXCLUDED.refresh_token,
-			expires_at = EXCLUDED.expires_at
+			expires_at = EXCLUDED.expires_at,
+			invalidated = FALSE
 		RETURNING *
 	`, u.ID, conn.Provider, conn.AccessToken, conn.RefreshToken, conn.ExpiresAt))
 
