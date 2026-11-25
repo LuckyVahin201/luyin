@@ -78,7 +78,7 @@ func (c *Connection) UpdateTokens(ctx context.Context, accessToken string, refre
 func (u *User) GetConnections(ctx context.Context) ([]Connection, error) {
 	rows, err := db.Pool.Query(ctx, `
 		SELECT * FROM connections WHERE user_id = $1
-	`, u.ID)
+	`, u.ID.String())
 
 	if err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func (u *User) HasStaleConnections(ctx context.Context, staleBefore time.Time) (
 			  AND invalidated = FALSE
 			  AND (last_synced_at IS NULL OR last_synced_at < $2)
 		)
-	`, u.ID, staleBefore).Scan(&exists)
+	`, u.ID.String(), staleBefore).Scan(&exists)
 
 	return exists, err
 }

@@ -42,7 +42,7 @@ func (u *User) CreateActivity(ctx context.Context, act *Activity) error {
 		INSERT INTO activities (user_id, provider, provider_item_id, action, title, occurred_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (user_id, provider, provider_item_id, occurred_at) DO NOTHING
-	`, u.ID, act.Provider, act.ProviderItemID, act.Action, act.Title, act.OccurredAt)
+	`, u.ID.String(), act.Provider, act.ProviderItemID, act.Action, act.Title, act.OccurredAt)
 
 	return err
 }
@@ -54,7 +54,7 @@ func (u *User) GetActivities(ctx context.Context, limit int) ([]Activity, error)
 		WHERE user_id = $1
 		ORDER BY occurred_at DESC
 		LIMIT $2
-	`, u.ID, limit)
+	`, u.ID.String(), limit)
 
 	if err != nil {
 		return nil, err
@@ -92,7 +92,7 @@ func (u *User) CreateActivities(ctx context.Context, acts []Activity) (int64, er
 			INSERT INTO activities (user_id, provider, provider_item_id, action, title, occurred_at)
 			VALUES ($1, $2, $3, $4, $5, $6)
 			ON CONFLICT (user_id, provider, provider_item_id, occurred_at) DO NOTHING
-		`, u.ID, a.Provider, a.ProviderItemID, a.Action, utils.Truncate(a.Title, maxTitleLength), a.OccurredAt)
+		`, u.ID.String(), a.Provider, a.ProviderItemID, a.Action, utils.Truncate(a.Title, maxTitleLength), a.OccurredAt)
 	}
 
 	br := tx.SendBatch(ctx, batch)
