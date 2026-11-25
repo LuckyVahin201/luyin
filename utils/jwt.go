@@ -20,13 +20,11 @@ func GenerateJWT(userID ulid.ULID, secret string) (string, error) {
 }
 
 func ParseJWT(tokenStr, secret string) (string, error) {
-	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("unexpected signing method")
-		}
-
-		return []byte(secret), nil
-	})
+	token, err := jwt.Parse(tokenStr,
+		func(t *jwt.Token) (any, error) { return []byte(secret), nil },
+		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithExpirationRequired(),
+	)
 
 	if err != nil || !token.Valid {
 		return "", errors.New("invalid token")
