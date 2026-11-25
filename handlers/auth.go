@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"luyin/config"
-	"luyin/db"
+	"luyin/models"
 	"luyin/utils"
 
 	"github.com/gofiber/fiber/v3"
@@ -122,19 +122,13 @@ func (h *AuthHandler) exchangeAndSave(c fiber.Ctx, tokenURL string, payload map[
 	}
 
 	// TODO: remove when users are impl'd
-	testUserID := "11111111-1111-1111-1111-111111111111"
-	_, err = db.Pool.Exec(
-		ctx.Background(),
-		`
-		INSERT INTO connections (user_id, provider, access_token, refresh_token, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (user_id, provider) DO UPDATE SET 
-			access_token = EXCLUDED.access_token,
-			refresh_token = EXCLUDED.refresh_token,
-			expires_at = EXCLUDED.expires_at;
-		`,
-		testUserID, providerName, tokenData.AccessToken, tokenData.RefreshToken, expiresAt,
-	)
+	user := &models.User{ID: "11111111-1111-1111-1111-111111111111"}
+	_, err = user.UpsertConnection(ctx.Background(), &models.Connection{
+		Provider:     providerName,
+		AccessToken:  tokenData.AccessToken,
+		RefreshToken: tokenData.RefreshToken,
+		ExpiresAt:    expiresAt,
+	})
 
 	if err != nil {
 		return c.Status(500).SendString("Failed to save tokens")

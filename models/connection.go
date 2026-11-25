@@ -1,0 +1,129 @@
+package models
+
+import (
+	"context"
+	"time"
+
+	"luyin/db"
+
+	"github.com/jackc/pgx/v5"
+)
+
+type Connection struct {
+	ID           string     `json:"id"`
+	UserID       string     `json:"-"`
+	Provider     string     `json:"provider"`
+	AccessToken  string     `json:"-"`
+	RefreshToken string     `json:"-"`
+	ExpiresAt    int64      `json:"expires_at"`
+	LastSyncedAt *time.Time `json:"last_synced_at"`
+	LastCursor   *string    `json:"-"`
+}
+
+func (m *Connection) FromRow(row pgx.Row) error {
+	return row.Scan(
+		&m.ID,
+		&m.UserID,
+		&m.Provider,
+		&m.AccessToken,
+		&m.RefreshToken,
+		&m.ExpiresAt,
+		&m.LastSyncedAt,
+		&m.LastCursor,
+	)
+}
+
+func (u *User) UpsertConnection(ctx context.Context, conn *Connection) (*Connection, error) {
+	var saved Connection
+	err := saved.FromRow(db.Pool.QueryRow(ctx, `
+		INSERT INTO connections (user_id, provider, access_token, refresh_token, expires_at)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5)
+		ON CONFLICT (user_id, provider) DO UPDATE SET
+			access_token = EXCLUDED.access_token,
+			refresh_token = EXCLUDED.refresh_token,
+			expires_at = EXCLUDED.expires_at
+		RETURNING *
+	`, u.ID, conn.Provider, conn.AccessToken, conn.RefreshToken, conn.ExpiresAt))
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &saved, nil
+}
+
+func (u *User) GetConnections(ctx context.Context) ([]Connection, error) {
+	rows, err := db.Pool.Query(ctx, `
+		SELECT * FROM connections WHERE user_id = $1
+	`, u.ID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	var conns []Connection
+	for rows.Next() {
+		var c Connection
+		if err := c.FromRow(rows); err != nil {
+			return nil, err
+		}
+
+		conns = append(conns, c)
+	}
+
+	return conns, rows.Err()
+}
+
+func (u *User) HasStaleConnections(ctx context.Context, staleBefore time.Time) (bool, error) {
+	var exists bool
+
+	err := db.Pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM connections
+			WHERE user_id = $1
+			  AND (last_synced_at IS NULL OR last_synced_at < $2)
+		)
+	`, u.ID, staleBefore).Scan(&exists)
+
+	return exists, err
+}
+
+func (c *Connection) MarkSynced(ctx context.Context, nextCursor string) error {
+	_, err := db.Pool.Exec(ctx, `
+		UPDATE connections
+		SET last_synced_at = NOW(),
+		    last_cursor = COALESCE(NULLIF($1, ''), last_cursor)
+		WHERE id = $2
+	`, nextCursor, c.ID)
+
+	return err
+}
+
+func GetStaleConnectionUserIDs(ctx context.Context, staleBefore time.Time, limit int) ([]string, error) {
+	rows, err := db.Pool.Query(ctx, `
+		SELECT DISTINCT user_id
+		FROM connections
+		WHERE last_synced_at IS NULL OR last_synced_at < $1
+		LIMIT $2
+	`, staleBefore, limit)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	var userIDs []string
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+
+		userIDs = append(userIDs, uid)
+	}
+
+	return userIDs, rows.Err()
+}
