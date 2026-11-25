@@ -2,10 +2,8 @@ package syncer
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"luyin/config"
-	"luyin/db"
 	"luyin/models"
 	"sync"
 	"time"
@@ -52,22 +50,40 @@ func (e *Engine) Enqueue(userID ulid.ULID) bool {
 	}
 }
 
-func (e *Engine) EnqueueIfStale(ctx context.Context, userID ulid.ULID) {
-	var needsSync bool
-	err := db.Pool.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM connections
-			WHERE user_id = $1
-			  AND (last_synced_at IS NULL OR last_synced_at < $2)
-		)
-	`, userID, time.Now().Add(-e.staleTTL)).Scan(&needsSync)
+func (e *Engine) enqueueStale(ctx context.Context) {
+	ids, err := models.GetStaleConnectionUserIDs(ctx, time.Now().Add(-e.staleTTL), 100)
+	if err != nil {
+		slog.Error("scheduler: stale user query failed", "err", err)
+		return
+	}
 
-	if err == nil && needsSync {
+	queued := 0
+	for _, id := range ids {
+		if e.Enqueue(id) {
+			queued++
+		}
+	}
+
+	slog.Debug("scheduler tick", "stale", len(ids), "queued", queued)
+}
+
+func (e *Engine) EnqueueIfStale(ctx context.Context, userID ulid.ULID) {
+	user := &models.User{ID: userID}
+
+	stale, err := user.HasStaleConnections(ctx, time.Now().Add(-e.staleTTL))
+	if err != nil {
+		slog.Error("stale check failed", "user_id", userID, "err", err)
+		return
+	}
+
+	if stale {
 		e.Enqueue(userID)
 	}
 }
 
 func (e *Engine) scheduler(ctx context.Context, interval time.Duration) {
+	e.enqueueStale(ctx)
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -76,25 +92,7 @@ func (e *Engine) scheduler(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			rows, err := db.Pool.Query(ctx, `
-				SELECT DISTINCT user_id FROM connections
-				WHERE last_synced_at IS NULL OR last_synced_at < $1
-				LIMIT 100
-			`, time.Now().Add(-e.staleTTL))
-
-			if err != nil {
-				log.Printf("scheduler query error: %v", err)
-				continue
-			}
-
-			for rows.Next() {
-				var uid ulid.ULID
-				if err := rows.Scan(&uid); err == nil {
-					e.Enqueue(uid)
-				}
-			}
-
-			rows.Close()
+			e.enqueueStale(ctx)
 		}
 	}
 }

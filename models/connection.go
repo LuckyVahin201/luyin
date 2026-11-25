@@ -99,21 +99,6 @@ func (u *User) GetConnections(ctx context.Context) ([]Connection, error) {
 	return conns, rows.Err()
 }
 
-func (u *User) HasStaleConnections(ctx context.Context, staleBefore time.Time) (bool, error) {
-	var exists bool
-
-	err := db.Pool.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM connections
-			WHERE user_id = $1
-			  AND invalidated = FALSE
-			  AND (last_synced_at IS NULL OR last_synced_at < $2)
-		)
-	`, u.ID, staleBefore).Scan(&exists)
-
-	return exists, err
-}
-
 func (c *Connection) MarkSynced(ctx context.Context, nextCursor string) error {
 	return c.FromRow(db.Pool.QueryRow(ctx, `
 		UPDATE connections
@@ -133,12 +118,29 @@ func (c *Connection) MarkInvalidated(ctx context.Context) error {
 	`, c.ID))
 }
 
-func GetStaleConnectionUserIDs(ctx context.Context, staleBefore time.Time, limit int) ([]string, error) {
+func (u *User) HasStaleConnections(ctx context.Context, staleBefore time.Time) (bool, error) {
+	var exists bool
+
+	err := db.Pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM connections
+			WHERE user_id = $1
+			  AND invalidated = FALSE
+			  AND (last_synced_at IS NULL OR last_synced_at < $2)
+		)
+	`, u.ID, staleBefore).Scan(&exists)
+
+	return exists, err
+}
+
+func GetStaleConnectionUserIDs(ctx context.Context, staleBefore time.Time, limit int) ([]ulid.ULID, error) {
 	rows, err := db.Pool.Query(ctx, `
-		SELECT DISTINCT user_id
+		SELECT user_id
 		FROM connections
 		WHERE invalidated = FALSE
 		  AND (last_synced_at IS NULL OR last_synced_at < $1)
+		GROUP BY user_id
+		ORDER BY MIN(COALESCE(last_synced_at, 'epoch'::timestamptz)) ASC
 		LIMIT $2
 	`, staleBefore, limit)
 
@@ -148,15 +150,14 @@ func GetStaleConnectionUserIDs(ctx context.Context, staleBefore time.Time, limit
 
 	defer rows.Close()
 
-	var userIDs []string
+	var ids []ulid.ULID
 	for rows.Next() {
-		var uid string
-		if err := rows.Scan(&uid); err != nil {
+		var id ulid.ULID
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-
-		userIDs = append(userIDs, uid)
+		ids = append(ids, id)
 	}
 
-	return userIDs, rows.Err()
+	return ids, rows.Err()
 }
