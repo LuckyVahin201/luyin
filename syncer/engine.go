@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"log"
+	"log/slog"
 	"luyin/config"
 	"luyin/db"
 	"luyin/models"
@@ -112,10 +113,11 @@ func (e *Engine) worker(ctx context.Context) {
 
 func (e *Engine) syncUser(ctx context.Context, userID ulid.ULID) {
 	user := &models.User{ID: userID}
+	logger := slog.With("user_id", userID)
 
 	conns, err := user.GetConnections(ctx)
 	if err != nil {
-		log.Printf("syncUser fetch connections error: %v", err)
+		logger.Error("fetching connections failed", "err", err)
 		return
 	}
 
@@ -129,31 +131,47 @@ func (e *Engine) syncUser(ctx context.Context, userID ulid.ULID) {
 			continue
 		}
 
+		clog := logger.With("provider", conn.Provider)
+
 		if conn.NeedsRefresh(5 * time.Minute) {
 			if err := e.refreshConnection(ctx, &conn); err != nil {
-				log.Printf("token refresh failed [%s/%s]: %v", userID, conn.Provider, err)
+				clog.Warn("token refresh failed", "err", err)
 				continue
 			}
 		}
 
 		activities, nextCursor, err := providerSyncer.Sync(ctx, conn)
 		if err != nil {
-			log.Printf("sync failed [%s/%s]: %v", userID, conn.Provider, err)
+			clog.Error("sync failed", "err", err)
 			continue
 		}
 
-		for _, act := range activities {
-			_ = user.CreateActivity(ctx, &models.Activity{
-				Provider:       conn.Provider,
-				ProviderItemID: act.ProviderItemID,
-				Action:         act.Action,
-				Title:          act.Title,
-				OccurredAt:     act.OccurredAt,
-			})
+		inserted, err := user.CreateActivities(ctx, toActivities(conn.Provider, activities))
+		if err != nil {
+			clog.Error("saving activities failed, cursor not advanced", "err", err)
+			continue
 		}
 
 		if err := conn.MarkSynced(ctx, nextCursor); err != nil {
-			log.Printf("markSynced failed [%s/%s]: %v", userID, conn.Provider, err)
+			clog.Error("mark synced failed", "err", err)
+			continue
+		}
+
+		clog.Info("sync complete", "fetched", len(activities), "inserted", inserted)
+	}
+}
+
+func toActivities(provider string, in []NormalizedActivity) []models.Activity {
+	out := make([]models.Activity, len(in))
+	for i, a := range in {
+		out[i] = models.Activity{
+			Provider:       provider,
+			ProviderItemID: a.ProviderItemID,
+			Action:         a.Action,
+			Title:          a.Title,
+			OccurredAt:     a.OccurredAt,
 		}
 	}
+
+	return out
 }

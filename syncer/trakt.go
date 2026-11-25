@@ -8,7 +8,13 @@ import (
 	"luyin/models"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
+)
+
+const (
+	traktPageSize = 100
+	traktMaxPages = 200
 )
 
 type TraktSyncer struct {
@@ -53,11 +59,12 @@ type traktHistoryItem struct {
 	} `json:"show"`
 }
 
-func (s *TraktSyncer) Sync(ctx context.Context, conn models.Connection) ([]NormalizedActivity, string, error) {
+func (s *TraktSyncer) fetchHistoryPage(ctx context.Context, conn models.Connection, page int) ([]traktHistoryItem, int, error) {
 	endpoint, _ := url.Parse("https://api.trakt.tv/sync/history")
 
 	q := endpoint.Query()
-	q.Set("limit", "100")
+	q.Set("limit", strconv.Itoa(traktPageSize))
+	q.Set("page", strconv.Itoa(page))
 
 	if conn.LastCursor != nil && *conn.LastCursor != "" {
 		q.Set("start_at", *conn.LastCursor)
@@ -67,74 +74,98 @@ func (s *TraktSyncer) Sync(ctx context.Context, conn models.Connection) ([]Norma
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return nil, "", err
+		return nil, 0, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+conn.AccessToken)
 	req.Header.Set("trakt-api-version", "2")
 	req.Header.Set("trakt-api-key", s.clientID)
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, "", err
+		return nil, 0, err
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, "", ErrUnauthorized
+		return nil, 0, ErrUnauthorized
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, "", fmt.Errorf("trakt API status %d: %s", resp.StatusCode, string(body))
+		return nil, 0, fmt.Errorf("trakt API status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var items []traktHistoryItem
 	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
-		return nil, "", err
+		return nil, 0, err
 	}
 
+	pageCount, _ := strconv.Atoi(resp.Header.Get("X-Pagination-Page-Count"))
+	return items, pageCount, nil
+}
+
+func (s *TraktSyncer) Sync(ctx context.Context, conn models.Connection) ([]NormalizedActivity, string, error) {
 	var activities []NormalizedActivity
 	var latestWatched time.Time
 
-	for _, item := range items {
-		watchedAt, err := time.Parse(time.RFC3339Nano, item.WatchedAt)
+	for page := 1; ; page++ {
+		if page > traktMaxPages {
+			return nil, "", fmt.Errorf("trakt: more than %d pages of history", traktMaxPages)
+		}
+
+		items, pageCount, err := s.fetchHistoryPage(ctx, conn, page)
 		if err != nil {
-			continue
+			return nil, "", err
 		}
 
-		if watchedAt.After(latestWatched) {
-			latestWatched = watchedAt
-		}
-
-		var itemID, title string
-		switch item.Type {
-		case "movie":
-			if item.Movie == nil {
+		for _, item := range items {
+			watchedAt, err := time.Parse(time.RFC3339Nano, item.WatchedAt)
+			if err != nil {
 				continue
 			}
 
-			itemID = fmt.Sprintf("movie:%d", item.Movie.IDs.Trakt)
-			title = item.Movie.Title
-		case "episode":
-			if item.Episode == nil || item.Show == nil {
+			if watchedAt.After(latestWatched) {
+				latestWatched = watchedAt
+			}
+
+			var itemID, title string
+			switch item.Type {
+			case "movie":
+				if item.Movie == nil {
+					continue
+				}
+
+				itemID = fmt.Sprintf("movie:%d", item.Movie.IDs.Trakt)
+				title = item.Movie.Title
+			case "episode":
+				if item.Episode == nil || item.Show == nil {
+					continue
+				}
+
+				itemID = fmt.Sprintf("episode:%d", item.Episode.IDs.Trakt)
+				title = fmt.Sprintf("%s S%02dE%02d", item.Show.Title, item.Episode.Season, item.Episode.Number)
+			default:
 				continue
 			}
 
-			itemID = fmt.Sprintf("episode:%d", item.Episode.IDs.Trakt)
-			title = fmt.Sprintf("%s S%02dE%02d", item.Show.Title, item.Episode.Season, item.Episode.Number)
-		default:
-			continue
+			activities = append(activities, NormalizedActivity{
+				ProviderItemID: itemID,
+				Action:         "watched",
+				Title:          title,
+				OccurredAt:     watchedAt.UTC(),
+			})
 		}
 
-		activities = append(activities, NormalizedActivity{
-			ProviderItemID: itemID,
-			Action:         "watched",
-			Title:          title,
-			OccurredAt:     watchedAt.UTC(),
-		})
+		last := page >= pageCount
+		if pageCount == 0 {
+			last = len(items) < traktPageSize
+		}
+
+		if len(items) == 0 || last {
+			break
+		}
 	}
 
 	var nextCursor string

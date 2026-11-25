@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+const (
+	anilistPerPage  = 50
+	anilistMaxPages = 100
+)
+
 type AniListSyncer struct {
 	client *http.Client
 }
@@ -21,6 +26,44 @@ func NewAniListSyncer() *AniListSyncer {
 	return &AniListSyncer{
 		client: &http.Client{Timeout: 15 * time.Second},
 	}
+}
+
+const anilistListQuery = `
+	query ($userId: Int, $page: Int, $perPage: Int) {
+		Page(page: $page, perPage: $perPage) {
+			pageInfo { hasNextPage }
+			mediaList(userId: $userId, type: ANIME, sort: UPDATED_TIME_DESC) {
+				status
+				progress
+				updatedAt
+				media { id title { english romaji } }
+			}
+		}
+	}
+`
+
+type anilistEntry struct {
+	Status    string `json:"status"`
+	Progress  int    `json:"progress"`
+	UpdatedAt int64  `json:"updatedAt"`
+	Media     struct {
+		ID    int `json:"id"`
+		Title struct {
+			English string `json:"english"`
+			Romaji  string `json:"romaji"`
+		} `json:"title"`
+	} `json:"media"`
+}
+
+type anilistPageResponse struct {
+	Data struct {
+		Page struct {
+			PageInfo struct {
+				HasNextPage bool `json:"hasNextPage"`
+			} `json:"pageInfo"`
+			MediaList []anilistEntry `json:"mediaList"`
+		} `json:"Page"`
+	} `json:"data"`
 }
 
 type gqlRequest struct {
@@ -96,89 +139,49 @@ func (s *AniListSyncer) Sync(ctx context.Context, conn models.Connection) ([]Nor
 		lastUpdated, _ = strconv.ParseInt(*conn.LastCursor, 10, 64)
 	}
 
-	query := `
-		query ($userId: Int) {
-			Page(page: 1, perPage: 50) {
-				mediaList(userId: $userId, sort: UPDATED_TIME_DESC) {
-					status
-					progress
-					updatedAt
-					media {
-						id
-						title {
-							english
-							romaji
-						}
-					}
-				}
-			}
-		}
-	`
-
-	var res struct {
-		Data struct {
-			Page struct {
-				MediaList []struct {
-					Status    string `json:"status"`
-					Progress  int    `json:"progress"`
-					UpdatedAt int64  `json:"updatedAt"`
-					Media     struct {
-						ID    int `json:"id"`
-						Title struct {
-							English string `json:"english"`
-							Romaji  string `json:"romaji"`
-						} `json:"title"`
-					} `json:"media"`
-				} `json:"mediaList"`
-			} `json:"Page"`
-		} `json:"data"`
-	}
-
-	err = s.postGraphQL(ctx, conn.AccessToken, gqlRequest{
-		Query:     query,
-		Variables: map[string]any{"userId": viewerID},
-	}, &res)
-
-	if err != nil {
-		return nil, "", err
+	if conn.LastCursor != nil && *conn.LastCursor != "" {
+		lastUpdated, _ = strconv.ParseInt(*conn.LastCursor, 10, 64)
 	}
 
 	var activities []NormalizedActivity
 	maxUpdated := lastUpdated
 
-	for _, entry := range res.Data.Page.MediaList {
-		if lastUpdated > 0 && entry.UpdatedAt <= lastUpdated {
+pages:
+	for page := 1; ; page++ {
+		if page > anilistMaxPages {
+			return nil, "", fmt.Errorf("anilist: more than %d pages of entries", anilistMaxPages)
+		}
+
+		var res anilistPageResponse
+		err := s.postGraphQL(ctx, conn.AccessToken, gqlRequest{
+			Query: anilistListQuery,
+			Variables: map[string]any{
+				"userId":  viewerID,
+				"page":    page,
+				"perPage": anilistPerPage,
+			},
+		}, &res)
+
+		if err != nil {
+			return nil, "", err
+		}
+
+		for _, entry := range res.Data.Page.MediaList {
+			if lastUpdated > 0 && entry.UpdatedAt <= lastUpdated {
+				break pages
+			}
+
+			if entry.UpdatedAt > maxUpdated {
+				maxUpdated = entry.UpdatedAt
+			}
+
+			activities = append(activities, anilistToActivity(entry))
+		}
+
+		if !res.Data.Page.PageInfo.HasNextPage {
 			break
 		}
 
-		if entry.UpdatedAt > maxUpdated {
-			maxUpdated = entry.UpdatedAt
-		}
-
-		title := entry.Media.Title.English
-		if title == "" {
-			title = entry.Media.Title.Romaji
-		}
-
-		action := strings.ToLower(entry.Status)
-		switch entry.Status {
-		case "CURRENT", "REPEATING":
-			action = "watched"
-			if entry.Progress > 0 {
-				title = fmt.Sprintf("%s (Ep %d)", title, entry.Progress)
-			}
-		case "COMPLETED":
-			action = "completed"
-		case "PLANNING":
-			action = "planned"
-		}
-
-		activities = append(activities, NormalizedActivity{
-			ProviderItemID: strconv.Itoa(entry.Media.ID),
-			Action:         action,
-			Title:          title,
-			OccurredAt:     time.Unix(entry.UpdatedAt, 0).UTC(),
-		})
 	}
 
 	var nextCursor string
@@ -187,4 +190,32 @@ func (s *AniListSyncer) Sync(ctx context.Context, conn models.Connection) ([]Nor
 	}
 
 	return activities, nextCursor, nil
+}
+
+func anilistToActivity(entry anilistEntry) NormalizedActivity {
+	title := entry.Media.Title.English
+	if title == "" {
+		title = entry.Media.Title.Romaji
+	}
+
+	action := strings.ToLower(entry.Status)
+	switch entry.Status {
+	case "CURRENT", "REPEATING":
+		action = "watched"
+
+		if entry.Progress > 0 {
+			title = fmt.Sprintf("%s (Ep %d)", title, entry.Progress)
+		}
+	case "COMPLETED":
+		action = "completed"
+	case "PLANNING":
+		action = "planned"
+	}
+
+	return NormalizedActivity{
+		ProviderItemID: strconv.Itoa(entry.Media.ID),
+		Action:         action,
+		Title:          title,
+		OccurredAt:     time.Unix(entry.UpdatedAt, 0).UTC(),
+	}
 }

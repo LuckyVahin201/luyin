@@ -5,10 +5,13 @@ import (
 	"time"
 
 	"luyin/db"
+	"luyin/utils"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/oklog/ulid/v2"
 )
+
+const maxTitleLength = 255
 
 type Activity struct {
 	ID             ulid.ULID `json:"id"`
@@ -70,4 +73,49 @@ func (u *User) GetActivities(ctx context.Context, limit int) ([]Activity, error)
 	}
 
 	return activities, rows.Err()
+}
+
+func (u *User) CreateActivities(ctx context.Context, acts []Activity) (int64, error) {
+	if len(acts) == 0 {
+		return 0, nil
+	}
+
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	batch := &pgx.Batch{}
+	for _, a := range acts {
+		batch.Queue(`
+			INSERT INTO activities (user_id, provider, provider_item_id, action, title, occurred_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (user_id, provider, provider_item_id, occurred_at) DO NOTHING
+		`, u.ID, a.Provider, a.ProviderItemID, a.Action, utils.Truncate(a.Title, maxTitleLength), a.OccurredAt)
+	}
+
+	br := tx.SendBatch(ctx, batch)
+
+	var inserted int64
+	for range acts {
+		tag, err := br.Exec()
+		if err != nil {
+			br.Close()
+			return 0, err
+		}
+
+		inserted += tag.RowsAffected()
+	}
+
+	if err := br.Close(); err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+
+	return inserted, nil
+
 }
