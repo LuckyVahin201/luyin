@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"luyin/config"
 	"luyin/db"
 	"luyin/handlers"
@@ -16,6 +17,9 @@ func main() {
 	defer cancel()
 
 	conf := config.New()
+
+	slog.Info("Hello, World!")
+
 	if err := db.Connect(conf.DatabaseURL); err != nil {
 		log.Fatal(err)
 	}
