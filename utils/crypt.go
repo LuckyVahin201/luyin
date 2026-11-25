@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	memory = 64 * 1024
-	time = 3
-	threads = 4
-	keyLen = 32
+	memory    = 64 * 1024
+	argonTime = 3
+	threads   = 4
+	keyLen    = 32
 ) // according to https://www.rfc-editor.org/rfc/rfc9106.html#name-recommendations
 // the owasp recommendation is a bit lower but ig we'll stick with the rfc one
 // it doesn't matter too much since changing these values won't affect already made passwords
@@ -23,30 +23,30 @@ const (
 var ErrInvalidHash = errors.New("given hash is invalid")
 
 type keyParams struct {
-	memory int
-	time int
+	memory  int
+	time    int
 	threads int
-	keyLen int
+	keyLen  int
 	version int
-	salt []byte
-	key []byte
+	salt    []byte
+	key     []byte
 }
 
 func generateSalt() []byte {
 	salt := make([]byte, 32)
-	rand.Read(salt) // according to the docs rand never fails: https://pkg.go.dev/crypto/rand#Read 
+	rand.Read(salt) // according to the docs rand never fails: https://pkg.go.dev/crypto/rand#Read
 	return salt
 }
 
 func HashPassword(password string) string {
 	salt := generateSalt()
-	key := argon2.IDKey([]byte(password), salt, time, memory, threads, keyLen)
+	key := argon2.IDKey([]byte(password), salt, argonTime, memory, threads, keyLen)
 
 	hash := fmt.Sprintf(
 		"$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version,
 		memory,
-		time,
+		argonTime,
 		threads,
 		base64.RawStdEncoding.EncodeToString(salt),
 		base64.RawStdEncoding.EncodeToString(key),
@@ -58,7 +58,7 @@ func decodeHash(hash string) (keyParams, error) {
 	params := keyParams{}
 	var temp string
 
-	_, err := fmt.Sscanf(hash, "$argon2id$v=%d$m=%d,t=%d,p=%d$%s", 
+	_, err := fmt.Sscanf(hash, "$argon2id$v=%d$m=%d,t=%d,p=%d$%s",
 		&params.version, &params.memory, &params.time, &params.threads, &temp,
 	)
 	if err != nil {
@@ -89,8 +89,6 @@ func CompareHashes(hash string, password string) bool {
 	if err != nil {
 		return false
 	}
-
-	fmt.Println(params)
 
 	key := argon2.IDKey([]byte(password), params.salt, uint32(params.time), uint32(params.memory), uint8(params.threads), uint32(params.keyLen))
 	if subtle.ConstantTimeCompare(params.key, key) == 1 {

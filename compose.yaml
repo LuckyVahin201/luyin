@@ -1,21 +1,21 @@
 services:
   database:
     restart: unless-stopped
-    image: postgres:16-alpine
+    image: postgres-pgx-ulid
+    build:
+      context: .
+      dockerfile: database.dockerfile # ig we're updating to postgres 18! :>
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 2s
       timeout: 1s
       retries: 5
-    ports:
-      - "127.0.0.1:5432:5432"
     environment:
       - POSTGRES_USER=luyin
       - POSTGRES_PASSWORD=luyin
       - POSTGRES_DB=luyin
     volumes:
-      - db:/var/lib/postgresql/data
-
+      - db:/var/lib/postgresql
 
 volumes:
   db:

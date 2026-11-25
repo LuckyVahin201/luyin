@@ -11,8 +11,8 @@ import (
 )
 
 type Connection struct {
-	ID           ulid.ULID     `json:"id"`
-	UserID       ulid.ULID     `json:"-"`
+	ID           ulid.ULID  `json:"id"`
+	UserID       ulid.ULID  `json:"-"`
 	Provider     string     `json:"provider"`
 	AccessToken  string     `json:"-"`
 	RefreshToken *string    `json:"-"`

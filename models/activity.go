@@ -7,11 +7,12 @@ import (
 	"luyin/db"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/oklog/ulid/v2"
 )
 
 type Activity struct {
-	ID             string    `json:"id"`
-	UserID         string    `json:"user_id"`
+	ID             ulid.ULID `json:"id"`
+	UserID         ulid.ULID `json:"user_id"`
 	Provider       string    `json:"provider"`
 	ProviderItemID string    `json:"provider_item_id"`
 	Action         string    `json:"action"`

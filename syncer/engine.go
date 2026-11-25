@@ -8,12 +8,14 @@ import (
 	"luyin/models"
 	"sync"
 	"time"
+
+	"github.com/oklog/ulid/v2"
 )
 
 type Engine struct {
 	cfg       config.Config
 	providers map[string]ProviderSyncer
-	queue     chan string
+	queue     chan ulid.ULID
 	inFlight  sync.Map
 	staleTTL  time.Duration
 }
@@ -22,7 +24,7 @@ func NewEngine(cfg config.Config, providers map[string]ProviderSyncer) *Engine {
 	return &Engine{
 		cfg:       cfg,
 		providers: providers,
-		queue:     make(chan string, 500),
+		queue:     make(chan ulid.ULID, 500),
 		staleTTL:  10 * time.Minute,
 	}
 }
@@ -35,7 +37,7 @@ func (e *Engine) Start(ctx context.Context, workerCount int) {
 	go e.scheduler(ctx, 15*time.Minute)
 }
 
-func (e *Engine) Enqueue(userID string) bool {
+func (e *Engine) Enqueue(userID ulid.ULID) bool {
 	if _, alreadyQueued := e.inFlight.LoadOrStore(userID, true); alreadyQueued {
 		return false
 	}
@@ -49,7 +51,7 @@ func (e *Engine) Enqueue(userID string) bool {
 	}
 }
 
-func (e *Engine) EnqueueIfStale(ctx context.Context, userID string) {
+func (e *Engine) EnqueueIfStale(ctx context.Context, userID ulid.ULID) {
 	var needsSync bool
 	err := db.Pool.QueryRow(ctx, `
 		SELECT EXISTS (
@@ -85,7 +87,7 @@ func (e *Engine) scheduler(ctx context.Context, interval time.Duration) {
 			}
 
 			for rows.Next() {
-				var uid string
+				var uid ulid.ULID
 				if err := rows.Scan(&uid); err == nil {
 					e.Enqueue(uid)
 				}
@@ -108,7 +110,7 @@ func (e *Engine) worker(ctx context.Context) {
 	}
 }
 
-func (e *Engine) syncUser(ctx context.Context, userID string) {
+func (e *Engine) syncUser(ctx context.Context, userID ulid.ULID) {
 	user := &models.User{ID: userID}
 
 	conns, err := user.GetConnections(ctx)
@@ -154,5 +156,4 @@ func (e *Engine) syncUser(ctx context.Context, userID string) {
 			log.Printf("markSynced failed [%s/%s]: %v", userID, conn.Provider, err)
 		}
 	}
-
 }

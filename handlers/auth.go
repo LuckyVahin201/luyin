@@ -15,6 +15,7 @@ import (
 	"luyin/utils"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/oklog/ulid/v2"
 )
 
 type AuthHandler struct {
@@ -23,16 +24,17 @@ type AuthHandler struct {
 	Store       sync.Map
 }
 
-type AuthSession struct {
-	ProviderName string
-	Verifier     string
-}
-
 func NewAuthHandler(providers map[string]config.ProviderConfig, redirectURI string) *AuthHandler {
 	return &AuthHandler{
 		RedirectURI: redirectURI,
 		Providers:   providers,
 	}
+}
+
+type AuthSession struct {
+	UserID       ulid.ULID
+	ProviderName string
+	Verifier     string
 }
 
 func (h *AuthHandler) GetAuthURL(c fiber.Ctx) error {
@@ -44,7 +46,10 @@ func (h *AuthHandler) GetAuthURL(c fiber.Ctx) error {
 
 	state, _ := utils.GenerateCodeVerifier()
 
-	sessionData := AuthSession{ProviderName: providerName}
+	sessionData := AuthSession{
+		UserID:       UserID(c),
+		ProviderName: providerName,
+	}
 
 	url := fmt.Sprintf(
 		"%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
@@ -95,10 +100,10 @@ func (h *AuthHandler) AuthCallback(c fiber.Ctx) error {
 		payload["client_secret"] = provider.ClientSecret
 	}
 
-	return h.exchangeAndSave(c, provider.TokenURL, payload, providerName)
+	return h.exchangeAndSave(c, provider.TokenURL, sessionData.UserID, payload, providerName)
 }
 
-func (h *AuthHandler) exchangeAndSave(c fiber.Ctx, tokenURL string, payload map[string]string, providerName string) error {
+func (h *AuthHandler) exchangeAndSave(c fiber.Ctx, tokenURL string, userID ulid.ULID, payload map[string]string, providerName string) error {
 	jsonPayload, _ := json.Marshal(payload)
 	resp, err := http.Post(tokenURL, "application/json", bytes.NewBuffer(jsonPayload))
 
@@ -121,12 +126,16 @@ func (h *AuthHandler) exchangeAndSave(c fiber.Ctx, tokenURL string, payload map[
 		expiresAt = time.Now().Unix() + 31536000
 	}
 
-	// TODO: remove when users are impl'd
-	user := &models.User{ID: "11111111-1111-1111-1111-111111111111"}
+	var refreshToken *string
+	if tokenData.RefreshToken != "" {
+		refreshToken = &tokenData.RefreshToken
+	}
+
+	user := &models.User{ID: userID}
 	_, err = user.UpsertConnection(ctx.Background(), &models.Connection{
 		Provider:     providerName,
 		AccessToken:  tokenData.AccessToken,
-		RefreshToken: &tokenData.RefreshToken,
+		RefreshToken: refreshToken,
 		ExpiresAt:    &expiresAt,
 	})
 

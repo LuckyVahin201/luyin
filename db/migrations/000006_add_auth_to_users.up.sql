@@ -1,3 +1,5 @@
+BEGIN;
+
 ALTER TABLE users
 ADD COLUMN password_hash TEXT;
 
@@ -13,3 +15,5 @@ CREATE TABLE identities (
 );
 
 CREATE INDEX identities_user_id_idx ON identities(user_id);
+
+COMMIT;

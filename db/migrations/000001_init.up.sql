@@ -1,3 +1,5 @@
+BEGIN;
+
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS users (
@@ -17,3 +19,5 @@ CREATE TABLE IF NOT EXISTS linked_accounts (
 
     UNIQUE(user_id, provider)
 );
+
+COMMIT;

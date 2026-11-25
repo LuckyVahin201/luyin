@@ -16,6 +16,7 @@ type ProviderConfig struct {
 
 type Config struct {
 	DatabaseURL string
+	JWTSecret   string
 	RedirectURI string
 	Providers   map[string]ProviderConfig
 }
@@ -25,6 +26,7 @@ func New() Config {
 
 	return Config{
 		DatabaseURL: os.Getenv("DATABASE_URL"),
+		JWTSecret:   os.Getenv("JWT_SECRET"),
 		RedirectURI: "http://localhost:3000/api/auth/callback",
 		Providers: map[string]ProviderConfig{
 			"trakt": {

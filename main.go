@@ -2,13 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"luyin/config"
 	"luyin/db"
 	"luyin/handlers"
 	"luyin/syncer"
-	"luyin/utils"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -36,16 +34,25 @@ func main() {
 	engine.Start(ctx, 3)
 
 	app := fiber.New()
+
+	middleware := handlers.RequireAuth(conf.JWTSecret)
+
+	login := handlers.NewLoginHandler(conf.JWTSecret)
 	auth := handlers.NewAuthHandler(conf.Providers, conf.RedirectURI)
 
-	app.Get("/api/auth/:provider/url", auth.GetAuthURL)
-	app.Get("/api/auth/callback", auth.AuthCallback)
+	app.Post("/api/users/register", login.CreateUserWithPassword)
+	app.Post("/api/users/login", login.Login)
 
-	app.Post("/api/sync", func(c fiber.Ctx) error {
-		queued := engine.Enqueue("11111111-1111-1111-1111-111111111111")
+	// authenticated routes
+	app.Get("/api/users/me", middleware, login.Me)
+	app.Get("/api/auth/:provider/url", middleware, auth.GetAuthURL)
 
+	app.Post("/api/sync", middleware, func(c fiber.Ctx) error {
+		queued := engine.Enqueue(handlers.UserID(c))
 		return c.JSON(fiber.Map{"queued": queued})
 	})
+
+	app.Get("/api/auth/callback", auth.AuthCallback)
 
 	log.Fatal(app.Listen(":3000"))
 }

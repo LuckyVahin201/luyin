@@ -1,2 +1,6 @@
+BEGIN;
+
 DROP TABLE IF EXISTS linked_accounts;
 DROP TABLE IF EXISTS users;
+
+COMMIT;
