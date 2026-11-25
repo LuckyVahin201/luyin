@@ -98,6 +98,10 @@ func (s *AniListSyncer) postGraphQL(ctx context.Context, accessToken string, pay
 
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusBadRequest && bytes.Contains(raw, []byte("Invalid token")) {
+			return ErrUnauthorized
+		}
+
 		return fmt.Errorf("anilist API status %d: %s", resp.StatusCode, string(raw))
 	}
 

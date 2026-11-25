@@ -5,6 +5,7 @@ import (
 	ctx "context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -41,6 +42,7 @@ func (h *AuthHandler) GetAuthURL(c fiber.Ctx) error {
 	providerName := strings.Clone(c.Params("provider"))
 	provider, exists := h.Providers[providerName]
 	if !exists {
+		slog.Error("auth handler: unknown provider", "name", providerName)
 		return c.Status(400).SendString("Unknown provider")
 	}
 

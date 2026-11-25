@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE identities
+DROP COLUMN provider;
+
+COMMIT;

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log/slog"
 	"luyin/models"
 	"luyin/utils"
 
@@ -72,6 +73,7 @@ func (h LoginHandler) Login(c fiber.Ctx) error {
 
 	token, err := utils.GenerateJWT(user.ID, h.JWTSecret)
 	if err != nil {
+		slog.Debug("")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate token"})
 	}
 
@@ -85,7 +87,8 @@ func (h LoginHandler) Me(c fiber.Ctx) error {
 	user, err := UserFromContext(c)
 
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "something broke ig"})
+		slog.Error("couldn't fetch user from context: ", "error", err, "userid", UserID(c))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "something broke internally"})
 	}
 
 	return c.Status(fiber.StatusOK).JSON(user)

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"luyin/config"
 	"luyin/models"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -103,10 +104,23 @@ func (e *Engine) worker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case userID := <-e.queue:
-			e.syncUser(ctx, userID)
-			e.inFlight.Delete(userID)
+			e.runSync(ctx, userID)
 		}
 	}
+}
+
+func (e *Engine) runSync(ctx context.Context, userID ulid.ULID) {
+	defer e.inFlight.Delete(userID)
+
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("sync panicked",
+				"user_id", userID,
+				"panic", r,
+				"stack", string(debug.Stack()),
+			)
+		}
+	}()
 }
 
 func (e *Engine) syncUser(ctx context.Context, userID ulid.ULID) {

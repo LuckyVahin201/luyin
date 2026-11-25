@@ -54,7 +54,7 @@ func (u *User) UpsertConnection(ctx context.Context, conn *Connection) (*Connect
 			expires_at = EXCLUDED.expires_at,
 			invalidated = FALSE
 		RETURNING *
-	`, u.ID, conn.Provider, conn.AccessToken, conn.RefreshToken, conn.ExpiresAt))
+	`, u.ID.String(), conn.Provider, conn.AccessToken, conn.RefreshToken, conn.ExpiresAt))
 
 	if err != nil {
 		return nil, err
@@ -72,7 +72,7 @@ func (c *Connection) UpdateTokens(ctx context.Context, accessToken string, refre
 		    invalidated = FALSE
 		WHERE id = $4
 		RETURNING *
-	`, accessToken, refreshToken, expiresAt, c.ID))
+	`, accessToken, refreshToken, expiresAt, c.ID.String()))
 }
 
 func (u *User) GetConnections(ctx context.Context) ([]Connection, error) {
@@ -106,7 +106,7 @@ func (c *Connection) MarkSynced(ctx context.Context, nextCursor string) error {
 		    last_cursor = COALESCE(NULLIF($1, ''), last_cursor)
 		WHERE id = $2
 		RETURNING *
-	`, nextCursor, c.ID))
+	`, nextCursor, c.ID.String()))
 }
 
 func (c *Connection) MarkInvalidated(ctx context.Context) error {
@@ -115,7 +115,7 @@ func (c *Connection) MarkInvalidated(ctx context.Context) error {
 		SET invalidated = TRUE
 		WHERE id = $1
 		RETURNING *
-	`, c.ID))
+	`, c.ID.String()))
 }
 
 func (u *User) HasStaleConnections(ctx context.Context, staleBefore time.Time) (bool, error) {
@@ -156,6 +156,7 @@ func GetStaleConnectionUserIDs(ctx context.Context, staleBefore time.Time, limit
 		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
+
 		ids = append(ids, id)
 	}
 
