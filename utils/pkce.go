@@ -6,13 +6,10 @@ import (
 	"encoding/base64"
 )
 
-func GenerateCodeVerifier() (string, error) {
+func GenerateCodeVerifier() string {
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 func GenerateCodeChallenge(verifier string) string {

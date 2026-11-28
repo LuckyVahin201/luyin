@@ -43,9 +43,16 @@ func main() {
 
 	login := handlers.NewLoginHandler(conf.JWTSecret)
 	auth := handlers.NewAuthHandler(conf.Providers, conf.RedirectURI)
+	oidc, _ := handlers.NewOIDCHandler(ctx, conf.JWTSecret, conf.OIDCProviders)
+
+	_ = oidc
 
 	app.Post("/api/users/register", login.CreateUserWithPassword)
 	app.Post("/api/users/login", login.Login)
+
+	app.Get("/api/oidc/:provider/login", oidc.OIDCLogin)
+	app.Get("/api/oidc/:provider/callback", oidc.OIDCCallback)
+	app.Post("/api/oidc/signup", oidc.OIDCSignup)
 
 	// authenticated routes
 	app.Get("/api/users/me", middleware, login.Me)

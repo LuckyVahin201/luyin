@@ -4,7 +4,7 @@ ALTER TABLE users
 ADD COLUMN password_hash TEXT;
 
 -- this is for oidc connections in the future like google and whatnot
-CREATE TABLE identities (
+CREATE TABLE IF NOT EXISTS identities (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     issuer text NOT NULL,
