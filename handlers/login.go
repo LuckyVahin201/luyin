@@ -41,6 +41,7 @@ func (h LoginHandler) CreateUserWithPassword(c fiber.Ctx) error {
 
 	token, err := utils.GenerateJWT(user.ID, h.JWTSecret)
 	if err != nil {
+		slog.Error("failed to generate jwt token", "userID", user.ID)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate token"})
 
 	}

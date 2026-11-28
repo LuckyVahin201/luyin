@@ -40,6 +40,46 @@ func CreateUserWithPassword(ctx context.Context, email, username, password_hash 
 	return &user, err
 }
 
+func CreateUserOauth(ctx context.Context, userEmail, username string, pending *PendingIdentity) (*User, error) {
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	user := User{}
+	err = user.FromRow(tx.QueryRow(ctx, `
+		INSERT INTO users (email, username)
+		VALUES ($1, $2)
+		RETURNING *
+	`, userEmail, username))
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO identities (user_id, provider, issuer, subject, email)
+		VALUES ($1, $2, $3, $4, $5)
+	`, user.ID.String(), pending.Provider, pending.Issuer, pending.Subject, pending.Email)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tx.Exec(ctx, `
+		DELETE FROM pending_identities
+		WHERE token = $1
+	`, pending.Token)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
 func GetUser(ctx context.Context, id ulid.ULID) (*User, error) {
 	var u User
 
@@ -70,4 +110,21 @@ func GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	}
 
 	return &u, nil
+}
+
+func DoesUserExistEmail(ctx context.Context, email string) (bool, error) {
+	var exists bool
+
+	err := db.Pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM users
+			WHERE email = $1
+		)
+	`, email).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
 }

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/joho/godotenv"
 )
 
@@ -15,11 +16,20 @@ type ProviderConfig struct {
 	UsePKCE      bool
 }
 
+type OIDCProviderConfig struct {
+	Issuer       string
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+	Scopes       []string
+}
+
 type Config struct {
-	DatabaseURL string
-	JWTSecret   string
-	RedirectURI string
-	Providers   map[string]ProviderConfig
+	DatabaseURL   string
+	JWTSecret     string
+	RedirectURI   string
+	Providers     map[string]ProviderConfig
+	OIDCProviders map[string]OIDCProviderConfig
 }
 
 func New() Config {
@@ -49,6 +59,22 @@ func New() Config {
 				ClientID:     require("ANILI_CLIENT_ID"),
 				ClientSecret: require("ANILI_CLIENT_SE"),
 				UsePKCE:      false,
+			},
+		},
+		OIDCProviders: map[string]OIDCProviderConfig{
+			"authentik": {
+				Issuer:       require("AUTHE_ISSUE_URL"),
+				ClientID:     require("AUTHE_CLIENT_ID"),
+				ClientSecret: require("AUTHE_CLIENT_SE"),
+				RedirectURL:  "http://localhost:3000/api/oidc/authentik/callback",
+				Scopes:       []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
+			},
+			"google": {
+				Issuer:       "https://accounts.google.com",
+				ClientID:     require("GOOGL_CLIENT_ID"),
+				ClientSecret: require("GOOGL_CLIENT_SE"),
+				RedirectURL:  "http://localhost:3000/api/oidc/google/callback",
+				Scopes:       []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
 			},
 		},
 	}

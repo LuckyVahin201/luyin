@@ -46,7 +46,7 @@ func (h *AuthHandler) GetAuthURL(c fiber.Ctx) error {
 		return c.Status(400).SendString("Unknown provider")
 	}
 
-	state, _ := utils.GenerateCodeVerifier()
+	state := utils.GenerateCodeVerifier()
 
 	sessionData := AuthSession{
 		UserID:       UserID(c),
@@ -59,7 +59,7 @@ func (h *AuthHandler) GetAuthURL(c fiber.Ctx) error {
 	)
 
 	if provider.UsePKCE {
-		verifier, _ := utils.GenerateCodeVerifier()
+		verifier := utils.GenerateCodeVerifier()
 		challenge := utils.GenerateCodeChallenge(verifier)
 
 		sessionData.Verifier = verifier
